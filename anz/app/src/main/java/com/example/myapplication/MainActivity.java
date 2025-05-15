@@ -1,192 +1,134 @@
 package com.example.myapplication;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.URL;
-import java.util.Enumeration;
-
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "SocketTest";
-    private TextView logTextView;
     private static final String SERVER_IP = "114.132.88.212";
     private static final int SERVER_PORT = 8080;
+    private HttpClient httpClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        logTextView = findViewById(R.id.log_text);
         Button sendButton = findViewById(R.id.send_button);
+        Button sendHexButton = findViewById(R.id.send_hex_button);
         
+        // 初始化HttpClient (全局单例)
+        httpClient = new HttpClient(SERVER_IP, SERVER_PORT);
+        
+        // 启用调试模式，查看详细日志
+        httpClient.setDebugMode(true);
+        
+        // 设置普通发送按钮点击事件
         sendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                logMessage("开始发送数据...");
-                checkNetworkConnection();
-                sendHelloHttp();
+                // 示例：发送测试数据
+                httpClient.send("hello", new HttpClient.Callback() {
+                    @Override
+                    public void onSuccess(int responseCode) {
+                        Toast.makeText(MainActivity.this, "发送成功: " + responseCode, Toast.LENGTH_SHORT).show();
+                    }
+                    
+                    @Override
+                    public void onError(Exception e) {
+                        Toast.makeText(MainActivity.this, "发送失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
         });
-
-        // 显示网络接口信息
-        showNetworkInterfaces();
-    }
-
-    // 检查网络连接状态
-    private void checkNetworkConnection() {
-        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
         
-        if (activeNetworkInfo != null && activeNetworkInfo.isConnected()) {
-            logMessage("网络连接状态: 已连接");
-            logMessage("网络类型: " + activeNetworkInfo.getTypeName());
-            logMessage("网络详情: " + activeNetworkInfo.getSubtypeName());
-            logMessage("网络状态: " + activeNetworkInfo.getState());
-        } else {
-            logMessage("网络连接状态: 未连接!");
+        // 设置十六进制数组发送按钮点击事件
+        sendHexButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // 创建一个十六进制字节数组
+                // 示例: 0xAA, 0x55, 0x01, 0x02, 0xFF, 0xFE
+                // 这是一个典型的单片机通信协议格式:
+                // 0xAA, 0x55: 帧头
+                // 0x01: 命令类型
+                // 0x02: 数据长度
+                // 0xFF, 0xFE: 数据内容
+                byte[] hexData = new byte[] {
+                    (byte)0xAA, (byte)0x55,  // 帧头
+                    (byte)0x01,              // 命令类型
+                    (byte)0x02,              // 数据长度
+                    (byte)0xFF, (byte)0xFE   // 数据内容
+                };
+                
+                // 发送十六进制数据
+                httpClient.send(hexData, new HttpClient.Callback() {
+                    @Override
+                    public void onSuccess(int responseCode) {
+                        Toast.makeText(MainActivity.this, 
+                            "十六进制数据发送成功: " + responseCode, 
+                            Toast.LENGTH_SHORT).show();
+                    }
+                    
+                    @Override
+                    public void onError(Exception e) {
+                        Toast.makeText(MainActivity.this, 
+                            "十六进制数据发送失败: " + e.getMessage(), 
+                            Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        });
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (httpClient != null) {
+            httpClient.close();
         }
     }
-
-    // 使用简单的HTTP发送数据
-    private void sendHelloHttp() {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                HttpURLConnection connection = null;
-                try {
-                    logMessage("准备连接到服务器: " + SERVER_IP + ":" + SERVER_PORT);
-                    
-                    // 测试是否可以ping通
-                    try {
-                        InetAddress address = InetAddress.getByName(SERVER_IP);
-                        logMessage("服务器IP: " + address.getHostAddress());
-                    } catch (Exception e) {
-                        logMessage("解析服务器IP失败: " + e.getMessage());
-                    }
-                    
-                    // 创建连接
-                    String urlString = "http://" + SERVER_IP + ":" + SERVER_PORT;
-                    logMessage("尝试连接URL: " + urlString);
-                    
-                    URL url = new URL(urlString);
-                    connection = (HttpURLConnection) url.openConnection();
-                    connection.setRequestMethod("POST");
-                    connection.setDoOutput(true);
-                    connection.setConnectTimeout(5000);
-                    connection.setReadTimeout(5000);
-                    
-                    // 连接
-                    logMessage("正在连接...");
-                    connection.connect();
-                    logMessage("连接成功，发送数据...");
-                    
-                    // 发送hello
-                    OutputStream os = connection.getOutputStream();
-                    os.write("hello".getBytes());
-                    os.flush();
-                    os.close();
-                    logMessage("数据已发送");
-                    
-                    // 获取响应
-                    int responseCode = connection.getResponseCode();
-                    logMessage("服务器响应: " + responseCode);
-                    
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(MainActivity.this, "发送成功，响应: " + responseCode, Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                    
-                } catch (Exception e) {
-                    final String error = e.toString();
-                    logMessage("发生错误: " + error);
-                    
-                    if (error.contains("EPERM")) {
-                        logMessage("权限错误，可能原因:");
-                        logMessage("1. 网络权限问题");
-                        logMessage("2. 防火墙阻止");
-                        logMessage("3. 安全策略限制");
-                    }
-                    
-                    // 记录堆栈
-                    for (StackTraceElement element : e.getStackTrace()) {
-                        logMessage("- " + element.toString());
-                    }
-                    
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(MainActivity.this, "发送失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                } finally {
-                    if (connection != null) {
-                        connection.disconnect();
-                    }
-                }
-            }
-        }).start();
+    
+    // 获取HttpClient实例，供其他组件使用
+    public HttpClient getHttpClient() {
+        return httpClient;
     }
     
-    // 显示网络接口信息
-    private void showNetworkInterfaces() {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    logMessage("=== 网络接口信息 ===");
-                    Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-                    while (interfaces.hasMoreElements()) {
-                        NetworkInterface networkInterface = interfaces.nextElement();
-                        logMessage("接口: " + networkInterface.getName() + " (" + networkInterface.getDisplayName() + ")");
-                        logMessage("  状态: " + (networkInterface.isUp() ? "启用" : "禁用"));
-                        logMessage("  回环: " + (networkInterface.isLoopback() ? "是" : "否"));
-                        
-                        Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
-                        while (addresses.hasMoreElements()) {
-                            InetAddress address = addresses.nextElement();
-                            logMessage("  地址: " + address.getHostAddress());
-                        }
-                    }
-                    logMessage("====================");
-                } catch (Exception e) {
-                    logMessage("获取网络接口信息失败: " + e.getMessage());
-                }
-            }
-        }).start();
+    /**
+     * 工具方法：将十六进制字符串转换为字节数组
+     * 例如: "AA55010203" -> {0xAA, 0x55, 0x01, 0x02, 0x03}
+     * 
+     * @param hexString 十六进制字符串(不含空格或其他分隔符)
+     * @return 字节数组
+     */
+    public static byte[] hexStringToByteArray(String hexString) {
+        int len = hexString.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hexString.charAt(i), 16) << 4)
+                    + Character.digit(hexString.charAt(i+1), 16));
+        }
+        return data;
     }
     
-    // 添加日志消息
-    private void logMessage(final String message) {
-        Log.d(TAG, message);
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                logTextView.append(message + "\n");
-                
-                // 自动滚动到底部
-                final int scrollAmount = logTextView.getLayout().getLineTop(logTextView.getLineCount()) - logTextView.getHeight();
-                if (scrollAmount > 0) {
-                    logTextView.scrollTo(0, scrollAmount);
-                } else {
-                    logTextView.scrollTo(0, 0);
-                }
+    /**
+     * 工具方法：将字节数组转换为十六进制字符串
+     * 例如: {0xAA, 0x55, 0x01, 0x02, 0x03} -> "AA55010203"
+     * 
+     * @param bytes 字节数组
+     * @return 十六进制字符串
+     */
+    public static String byteArrayToHexString(byte[] bytes) {
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : bytes) {
+            String hex = Integer.toHexString(0xFF & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
             }
-        });
+            hexString.append(hex);
+        }
+        return hexString.toString().toUpperCase();
     }
 }
